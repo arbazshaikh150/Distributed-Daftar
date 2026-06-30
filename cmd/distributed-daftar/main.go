@@ -12,5 +12,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Distributed Daftar started")
+	fmt.Println("Hello from Arbaz")
 }
