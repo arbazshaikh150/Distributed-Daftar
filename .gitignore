@@ -1,0 +1,27 @@
+# Binaries
+bin/
+build/
+dist/
+*.exe
+*.test
+*.out
+
+# Go workspace and vendored dependencies
+go.work
+go.work.sum
+vendor/
+
+# Coverage and profiling
+coverage.out
+*.coverprofile
+*.prof
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
