@@ -10,7 +10,6 @@ go.work
 go.work.sum
 vendor/
 
-# Coverage and profiling
 coverage.out
 *.coverprofile
 *.prof
