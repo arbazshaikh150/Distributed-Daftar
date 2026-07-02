@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/database"
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/cache"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/controller"
 )
 
@@ -15,8 +16,13 @@ func Run() error {
 	if err := database.ConnectToDb(); err != nil {
 		log.Fatal(err)
 	}
-
 	log.Println("Connected to the PostGresSQL")
+
+	// Connecting to Redis
+	if err := cache.ConnectToRedis(); err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Connected to the Redis")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /nodes/register", controller.NodeRegister)
