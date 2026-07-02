@@ -6,7 +6,6 @@ dist/
 *.test
 *.out
 
-# Go workspace and vendored dependencies
 go.work
 go.work.sum
 vendor/
