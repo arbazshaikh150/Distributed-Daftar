@@ -2,13 +2,12 @@ package controller
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
 
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/dto"
-	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/enums"
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/service"
 )
 
 func NodeRegister(w http.ResponseWriter, r *http.Request) {
@@ -23,13 +22,16 @@ func NodeRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	response := dto.RegisterNodeResponse{
-		NodeID:  uuid.New(),
-		Status:  enums.Active,
-		Message: "Node Register Successfully",
+	/*
+		Request Should also be validated
+	*/
+	// Saving inside the database
+	response, err := service.RegisterNode(request)
+	if err != nil {
+		http.Error(w, "Failed to register Node", http.StatusInternalServerError)
+		return
 	}
-	fmt.Println("Request Received" , r)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
@@ -37,26 +39,63 @@ func NodeRegister(w http.ResponseWriter, r *http.Request) {
 
 }
 
-
 func GetNodeInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// getting node_id from the request params
+	id := r.PathValue("id")
+	nodeId, err := uuid.Parse(id)
 
-	// Fetching from the database and then sending the response for the given node
+	if err != nil {
+		http.Error(w, "Invalid Node Id", http.StatusBadRequest)
+		return
+	}
+	// getting node_id from the request params
+	// Querying based on the node id
+	node, err := service.GetNodeInfo(nodeId)
+	if err != nil {
+		http.Error(w, "Invalid Node Id", http.StatusNotFound)
+		return
+	}
+
+	// Sending the response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(node)
 }
 
-
 // Updating the nodeCapacity Functions
-func UpdateNodeCap (w http.ResponseWriter, r *http.Request) {
+func UpdateNodeCap(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	type ReqDTO struct {
+		Id                uuid.UUID `json:"id"`
+		AvailableCapacity int64     `json:"availableCapacity"`
+	}
 	// Updating the database
+	// Using the locking and updating from the database
+	var request ReqDTO
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "Failed to Parse the request", http.StatusBadRequest)
+		return
+	}
+
+	// Using transactions here
+	node, err := service.UpdateNodeCap(request.Id, request.AvailableCapacity)
+	if err != nil {
+		http.Error(w, "Failed to update available capacity", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(node)
+
 }
 
 // All active Nodes
@@ -66,5 +105,17 @@ func GetAllActiveNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetching from the database and then sending the response for the given node
+	// Fetching from the database and then sending the response for all node
+	allActiveNode, err := service.GetAllActiveNodes()
+	if err != nil {
+		http.Error(w, "Error occured while fetching from the db ", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{
+		"activeNodes": allActiveNode,
+	})
+
 }

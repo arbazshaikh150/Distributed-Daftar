@@ -5,7 +5,7 @@ import (
 )
 
 type NodesData struct {
-	NodeID            uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey;column:node_id"`
+	NodeId            uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey;column:node_id"`
 	Host              string    `gorm:"column:host"`
 	Port              int       `gorm:"column:port"`
 	Status            string    `gorm:"column:status"`
