@@ -119,3 +119,24 @@ func GetAllActiveNodes(w http.ResponseWriter, r *http.Request) {
 	})
 
 }
+
+func HeartBeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request dto.HeartBeatRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "Invalid Node Id Request", http.StatusBadRequest)
+		return
+	}
+	response, err := service.HeartBeat(request.NodeId)
+	if err != nil {
+		http.Error(w, "Failed to process heartbeat", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}

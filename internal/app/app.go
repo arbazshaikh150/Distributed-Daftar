@@ -27,8 +27,10 @@ func Run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /nodes/register", controller.NodeRegister)
 	mux.HandleFunc("GET /nodes/{id}", controller.GetNodeInfo)
-	mux.HandleFunc("PATCH /nodes/updateCap", controller.UpdateNodeCap)
+	mux.HandleFunc("PATCH /nodes/updatecap", controller.UpdateNodeCap)
 	mux.HandleFunc("GET /nodes/active", controller.GetAllActiveNodes)
+
+	mux.HandleFunc("POST /nodes/heartbeat", controller.HeartBeat)
 
 	fmt.Println("Server is listening at port 8080")
 	return http.ListenAndServe(":8080", mux)

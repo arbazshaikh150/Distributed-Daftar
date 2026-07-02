@@ -1,13 +1,18 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/database"
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/cache"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/dto"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/enums"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/model"
@@ -84,4 +89,40 @@ func GetAllActiveNodes() ([]model.NodesData, error) {
 	}
 
 	return allActiveNode, nil
+}
+
+/*
+	In future i have to add the availableSize and the
+	totalsize for the node
+
+	for now , i am just taking the id and the status
+*/
+
+func HeartBeat(id uuid.UUID) (dto.HeartBeatResponse, error) {
+	key := "node:" + id.String() + ":heartbeat"
+
+	retryCount, err := strconv.Atoi(os.Getenv("RETRY_COUNT"))
+	if err != nil {
+		retryCount = 3
+	}
+
+	heartbeat, err := strconv.Atoi(os.Getenv("HEARTBEAT_INTERVAL"))
+	if err != nil {
+		heartbeat = 5
+	}
+
+	ttl := time.Duration(retryCount*heartbeat) * time.Second
+
+	context := context.Background()
+	err = cache.RedisClient.Set(context, key, string(enums.Active), ttl).Err()
+	if err != nil {
+		return dto.HeartBeatResponse{}, err
+	}
+
+	return dto.HeartBeatResponse{
+		NodeId:  id,
+		Status:  enums.Active,
+		Message: "HeartBeat Received",
+	}, nil
+
 }
