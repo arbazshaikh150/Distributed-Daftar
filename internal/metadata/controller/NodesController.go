@@ -12,7 +12,7 @@ import (
 
 /*
 	TODO : I Have to add the status with the help of redis and then do the thing
-			via an api call to redis 
+			via an api call to redis
 */
 
 func NodeRegister(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +136,7 @@ func HeartBeat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid Node Id Request", http.StatusBadRequest)
 		return
 	}
-	response, err := service.HeartBeat(request.NodeId)
+	response, err := service.HeartBeat(request.NodeId, request.AvailableCapacity)
 	if err != nil {
 		http.Error(w, "Failed to process heartbeat", http.StatusInternalServerError)
 		return

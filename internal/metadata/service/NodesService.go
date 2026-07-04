@@ -98,8 +98,15 @@ func GetAllActiveNodes() ([]model.NodesData, error) {
 	for now , i am just taking the id and the status
 */
 
-func HeartBeat(id uuid.UUID) (dto.HeartBeatResponse, error) {
-	key := "node:" + id.String() + ":heartbeat"
+func HeartBeat(id uuid.UUID , availableSpace int64) (dto.HeartBeatResponse, error) {
+	/*
+		Storing heart beat and available capacity
+	*/
+	key := "node:" + id.String()
+	fields := map[string]any{
+		"status": string(enums.Active),
+		"availableSpace": availableSpace,
+	}
 
 	retryCount, err := strconv.Atoi(os.Getenv("RETRY_COUNT"))
 	if err != nil {
@@ -114,9 +121,16 @@ func HeartBeat(id uuid.UUID) (dto.HeartBeatResponse, error) {
 	ttl := time.Duration(retryCount*heartbeat) * time.Second
 
 	context := context.Background()
-	err = cache.RedisClient.Set(context, key, string(enums.Active), ttl).Err()
+	err = cache.RedisClient.HSet(context, key, fields).Err()
 	if err != nil {
 		return dto.HeartBeatResponse{}, err
+	}
+
+	// Adding the expiry to Hset
+	err = cache.RedisClient.Expire(context , key , ttl).Err()
+	
+	if err != nil {
+		return  dto.HeartBeatResponse{} , nil
 	}
 
 	return dto.HeartBeatResponse{

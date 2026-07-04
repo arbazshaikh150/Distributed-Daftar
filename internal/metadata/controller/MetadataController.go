@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/dto"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/service"
 )
 
@@ -104,13 +105,41 @@ func GetFileLocation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-
-
-// Main Battle begin here 
+// Main Battle begin here
 /*
-	Updating the files : 
-	Storing the metadata --> Pointing the nodes that are available 
-	locking the nodes 
+	Updating the files :
+	Storing the metadata --> Pointing the nodes that are available
+	locking the nodes
 	making the data consistent and also updating the result without having data
 	inconsistency
 */
+// I have to implement the two phase commit protocol
+/*
+	First i will allocate the nodes and then after that i will be getting the nodes
+	that actually stored in the nodes and minimum replications
+*/
+
+// 1ST PHASE --> REQUEST
+func AllocateNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req dto.DataAllocationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid Parameters in request body", http.StatusBadRequest)
+		return
+	}
+
+	response, err := service.AvailableNodes(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{
+		"nodes": response,
+	})
+}

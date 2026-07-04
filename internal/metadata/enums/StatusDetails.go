@@ -7,4 +7,6 @@ const (
 	InActive StatusDetail = "InActive"
 	COMMITTED StatusDetail = "Committed"
 	PROGRESS StatusDetail = "Progress"
+	UNDERREPLICATED StatusDetail = "UnderReplicated"
 )
+

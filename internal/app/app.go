@@ -24,7 +24,6 @@ func Run() error {
 	}
 	log.Println("Connected to the Redis")
 
-
 	// Nodes
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /nodes/register", controller.NodeRegister)
@@ -39,6 +38,7 @@ func Run() error {
 	mux.HandleFunc("GET /files/{fileId}", controller.GetFile)
 	mux.HandleFunc("GET /files/{fileId}/location", controller.GetFileLocation)
 	mux.HandleFunc("PATCH /files/{fileId}", controller.UpdateFileVersion)
+	mux.HandleFunc("POST /files/allocate", controller.AllocateNodes)
 
 	fmt.Println("Server is listening at port 8080")
 	return http.ListenAndServe(":8080", mux)
