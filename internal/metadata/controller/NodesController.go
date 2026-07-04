@@ -10,6 +10,11 @@ import (
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/service"
 )
 
+/*
+	TODO : I Have to add the status with the help of redis and then do the thing
+			via an api call to redis 
+*/
+
 func NodeRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

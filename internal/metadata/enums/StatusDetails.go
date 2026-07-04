@@ -5,5 +5,6 @@ type StatusDetail string
 const (
 	Active StatusDetail = "Active"
 	InActive StatusDetail = "InActive"
-	// can have many more status 
+	COMMITTED StatusDetail = "Committed"
+	PROGRESS StatusDetail = "Progress"
 )
