@@ -120,6 +120,11 @@ func GetFileLocation(w http.ResponseWriter, r *http.Request) {
 */
 
 // 1ST PHASE --> REQUEST
+/*
+	This is partially correct 
+	i have to store the metadata also 
+	for proper management
+*/
 func AllocateNodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -136,10 +141,24 @@ func AllocateNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	fileId := uuid.New()
+	/*
+		Some db operation should be done here
+		for storing the logs
+	*/
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
+		"fileId" : fileId,
 		"nodes": response,
 	})
 }
+
+
+/*
+	2md phase 
+	file service will do the save operation and after that it will make 
+	a commit request 
+	which contains the 
+*/

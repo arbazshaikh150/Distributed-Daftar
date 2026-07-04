@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"math/rand/v2"
 	"strconv"
@@ -12,9 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/database"
-	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/cache"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/dto"
-	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/enums"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/model"
 )
 
@@ -98,8 +95,7 @@ func AvailableNodes(req dto.DataAllocationRequest) ([]string, error) {
 	}
 
 	// Fetch from the redis and the return the nodes
-	context := context.Background()
-	keys, err := cache.RedisClient.Keys(context, "node:*").Result()
+	keys, err := RedisKeys("node:*")
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +104,7 @@ func AvailableNodes(req dto.DataAllocationRequest) ([]string, error) {
 	availableNodes := []string{}
 
 	for _, key := range keys {
-		data, err := cache.RedisClient.HGetAll(context, key).Result()
+		data, err := RedisHashGetAll(key)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +114,7 @@ func AvailableNodes(req dto.DataAllocationRequest) ([]string, error) {
 			continue
 		}
 
-		if data["status"] == string(enums.Active) && availableSpace >= reqSpace {
+		if availableSpace >= reqSpace {
 			nodeId := strings.TrimPrefix(key, "node:")
 			availableNodes = append(availableNodes, nodeId)
 		}

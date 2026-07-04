@@ -1,18 +1,11 @@
 package service
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"strconv"
-	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/database"
-	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/cache"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/dto"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/enums"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/model"
@@ -22,15 +15,17 @@ func RegisterNode(request dto.RegisterNodeRequest) (dto.RegisterNodeResponse, er
 	nodeId := uuid.New()
 
 	node := model.NodesData{
-		NodeId:            nodeId,
-		Host:              request.Host,
-		Port:              request.Port,
-		Status:            string(enums.Active),
-		TotalCapacity:     request.TotalCapacity,
-		AvailableCapacity: request.TotalCapacity,
+		NodeId:        nodeId,
+		Host:          request.Host,
+		Port:          request.Port,
+		TotalCapacity: request.TotalCapacity,
 	}
 
 	if err := database.DB.Create(&node).Error; err != nil {
+		return dto.RegisterNodeResponse{}, err
+	}
+
+	if err := SaveNodeCache(nodeId, request.TotalCapacity); err != nil {
 		return dto.RegisterNodeResponse{}, err
 	}
 
@@ -45,50 +40,48 @@ func RegisterNode(request dto.RegisterNodeRequest) (dto.RegisterNodeResponse, er
 	return response, nil
 }
 
-func GetNodeInfo(nodeId uuid.UUID) (model.NodesData, error) {
+func GetNodeInfo(nodeId uuid.UUID) (dto.NodeResponse, error) {
 	var node model.NodesData
 	if err := database.DB.First(&node, "node_id = ?", nodeId).Error; err != nil {
-		return model.NodesData{}, err
+		return dto.NodeResponse{}, err
 	}
 
-	return node, nil
+	return NodeResponseFromCache(node)
 }
 
-func UpdateNodeCap(id uuid.UUID, availableCapacity int64) (model.NodesData, error) {
+func UpdateNodeCap(id uuid.UUID, availableCapacity int64) (dto.NodeResponse, error) {
 	var node model.NodesData
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&node, "node_id = ?", id).Error; err != nil {
-			return err
-		}
-
-		node.AvailableCapacity = availableCapacity
-
-		if err := tx.Save(&node).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return model.NodesData{}, err
+	if err := database.DB.First(&node, "node_id = ?", id).Error; err != nil {
+		return dto.NodeResponse{}, err
 	}
 
-	return node, nil
+	if err := SaveNodeCache(id, availableCapacity); err != nil {
+		return dto.NodeResponse{}, err
+	}
+
+	return NodeResponseFromCache(node)
 }
 
-func GetAllActiveNodes() ([]model.NodesData, error) {
-	var allActiveNode []model.NodesData
-	err := database.DB.
-		Where("status = ?", string(enums.Active)).
-		Find(&allActiveNode).Error
-
-	if err != nil {
+func GetAllActiveNodes() ([]dto.NodeResponse, error) {
+	var nodes []model.NodesData
+	if err := database.DB.Find(&nodes).Error; err != nil {
 		return nil, err
 	}
 
-	return allActiveNode, nil
+	activeNodes := []dto.NodeResponse{}
+
+	for _, node := range nodes {
+		response, err := NodeResponseFromCache(node)
+		if err != nil {
+			return nil, err
+		}
+
+		if response.Status == enums.Active {
+			activeNodes = append(activeNodes, response)
+		}
+	}
+
+	return activeNodes, nil
 }
 
 /*
@@ -98,39 +91,9 @@ func GetAllActiveNodes() ([]model.NodesData, error) {
 	for now , i am just taking the id and the status
 */
 
-func HeartBeat(id uuid.UUID , availableSpace int64) (dto.HeartBeatResponse, error) {
-	/*
-		Storing heart beat and available capacity
-	*/
-	key := "node:" + id.String()
-	fields := map[string]any{
-		"status": string(enums.Active),
-		"availableSpace": availableSpace,
-	}
-
-	retryCount, err := strconv.Atoi(os.Getenv("RETRY_COUNT"))
-	if err != nil {
-		retryCount = 3
-	}
-
-	heartbeat, err := strconv.Atoi(os.Getenv("HEARTBEAT_INTERVAL"))
-	if err != nil {
-		heartbeat = 5
-	}
-
-	ttl := time.Duration(retryCount*heartbeat) * time.Second
-
-	context := context.Background()
-	err = cache.RedisClient.HSet(context, key, fields).Err()
-	if err != nil {
+func HeartBeat(id uuid.UUID, availableSpace int64) (dto.HeartBeatResponse, error) {
+	if err := SaveNodeCache(id, availableSpace); err != nil {
 		return dto.HeartBeatResponse{}, err
-	}
-
-	// Adding the expiry to Hset
-	err = cache.RedisClient.Expire(context , key , ttl).Err()
-	
-	if err != nil {
-		return  dto.HeartBeatResponse{} , nil
 	}
 
 	return dto.HeartBeatResponse{
