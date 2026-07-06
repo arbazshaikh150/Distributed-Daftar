@@ -4,7 +4,7 @@ package enums
 type StatusDetail string
 const (
 	Active StatusDetail = "Active"
-	InActive StatusDetail = "InActive"
+	INACTIVE StatusDetail = "InActive"
 	COMMITTED StatusDetail = "Committed"
 	PROGRESS StatusDetail = "Progress"
 	UNDERREPLICATED StatusDetail = "UnderReplicated"

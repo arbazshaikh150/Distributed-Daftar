@@ -91,6 +91,12 @@ func GetAllActiveNodes() ([]dto.NodeResponse, error) {
 	for now , i am just taking the id and the status
 */
 
+/*
+	TODO : THERE IS SOME ERROR , WHEN I GIVE HEARTBEAT OF DEAD NODE 
+			IT IS NOT UPDATING IT INSIDE THE REDIS 
+			HAVE TO FIX THIS 	
+*/
+
 func HeartBeat(id uuid.UUID, availableSpace int64) (dto.HeartBeatResponse, error) {
 	if err := SaveNodeCache(id, availableSpace); err != nil {
 		return dto.HeartBeatResponse{}, err

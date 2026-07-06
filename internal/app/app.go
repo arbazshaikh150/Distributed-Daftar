@@ -39,7 +39,8 @@ func Run() error {
 	mux.HandleFunc("GET /files/{fileId}/location", controller.GetFileLocation)
 	mux.HandleFunc("PATCH /files/{fileId}", controller.UpdateFileVersion)
 	mux.HandleFunc("POST /files/allocate", controller.AllocateNodes)
-
+	mux.HandleFunc("POST /files/commit", controller.CommitResponse)
+	
 	fmt.Println("Server is listening at port 8080")
 	return http.ListenAndServe(":8080", mux)
 }

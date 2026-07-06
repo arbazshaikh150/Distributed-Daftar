@@ -157,8 +157,29 @@ func AllocateNodes(w http.ResponseWriter, r *http.Request) {
 
 
 /*
-	2md phase 
+	2nd phase 
 	file service will do the save operation and after that it will make 
 	a commit request 
 	which contains the 
 */
+func CommitResponse(w http.ResponseWriter , r *http.Request){
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req dto.CommitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid Parameters in request body", http.StatusBadRequest)
+		return
+	}
+	response, err := service.Commit(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+
+}

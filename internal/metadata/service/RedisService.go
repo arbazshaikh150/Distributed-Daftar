@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -84,7 +86,7 @@ func NodeResponseFromCache(node model.NodesData) (dto.NodeResponse, error) {
 		return dto.NodeResponse{}, err
 	}
 
-	status := enums.InActive
+	status := enums.INACTIVE
 	if exists {
 		status = enums.Active
 	}
@@ -107,4 +109,60 @@ func NodeResponseFromCache(node model.NodesData) (dto.NodeResponse, error) {
 		TotalCapacity:     node.TotalCapacity,
 		AvailableCapacity: availableCapacity,
 	}, nil
+}
+
+func GetAvailableNodeWithCapExclude(reqSpace int64, reqNodes int, exclude map[uuid.UUID]bool,
+) ([]uuid.UUID, error) {
+	if reqSpace <= 0 {
+		return nil, errors.New("required space must be greater than zero")
+	}
+
+	if reqNodes <= 0 {
+		return []uuid.UUID{}, nil
+	}
+
+	keys, err := RedisKeys("node:*")
+	if err != nil {
+		return nil, err
+	}
+
+	availableNodes := []uuid.UUID{}
+
+	for _, key := range keys {
+		data, err := RedisHashGetAll(key)
+		if err != nil {
+			return nil, err
+		}
+
+		availableSpace, err := strconv.ParseInt(data["availableSpace"], 10, 64)
+		if err != nil {
+			continue
+		}
+
+		if availableSpace < reqSpace {
+			continue
+		}
+
+		nodeIdString := strings.TrimPrefix(key, "node:")
+		nodeId, err := uuid.Parse(nodeIdString)
+		if err != nil {
+			continue
+		}
+
+		if exclude[nodeId] {
+			continue
+		}
+
+		availableNodes = append(availableNodes, nodeId)
+
+		if len(availableNodes) == reqNodes {
+			break
+		}
+	}
+
+	if len(availableNodes) < reqNodes {
+		return nil, errors.New("not enough extra active nodes for repair")
+	}
+
+	return availableNodes, nil
 }
