@@ -8,6 +8,7 @@ import (
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/database"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/cache"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/controller"
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/queue"
 )
 
 // Run starts the application.
@@ -23,6 +24,12 @@ func Run() error {
 		log.Fatal(err)
 	}
 	log.Println("Connected to the Redis")
+
+	// Connecting to RabbitMq
+	if err := queue.ConnetRabbitMQ(); err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Connected To RabbitMQ")
 
 	// Nodes
 	mux := http.NewServeMux()
@@ -40,7 +47,7 @@ func Run() error {
 	mux.HandleFunc("PATCH /files/{fileId}", controller.UpdateFileVersion)
 	mux.HandleFunc("POST /files/allocate", controller.AllocateNodes)
 	mux.HandleFunc("POST /files/commit", controller.CommitResponse)
-	
+
 	fmt.Println("Server is listening at port 8080")
 	return http.ListenAndServe(":8080", mux)
 }

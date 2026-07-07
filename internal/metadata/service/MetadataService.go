@@ -99,10 +99,25 @@ func AvailableNodes(req dto.DataAllocationRequest) ([]uuid.UUID, error) {
 
 /*
 	TODO : Anyone can call the metadata system but i am assuming it is expose to only internal apis
-			i have to add the security as well and also there might be some restrictions also 
+			i have to add the security as well and also there might be some restrictions also
 			but since it is a metadata service this is what i have to expect the behaviour
 */
 // Finding the Commit protocols
+
+/*
+Here Rejection means that i am not storing the data into the postgres db
+and the node that are storing the data must delete it
+
+if i am developing a full fledge system then
+I saved the file in some node with some TTL --> if we are getting the commit
+response from the db then permanently store it
+else after ttl delete it
+
+Metadata commit --> (failure) --> file Service --> TTL expire --> node clean up the space
+by own
+
+i do not have to worry about it
+*/
 func Commit(req dto.CommitRequest) (dto.CommitResponse, error) {
 	// here i have to do the two phase transactional commit
 	// Error handling
@@ -167,6 +182,17 @@ func Commit(req dto.CommitRequest) (dto.CommitResponse, error) {
 			}
 
 			if err := tx.Create(&replica).Error; err != nil {
+				return err
+			}
+
+			// here i have to add this into the outbox_event table as well
+			event := model.OutboxEvent{
+				JobId:     replica.JobId,
+				EventType: string(enums.ReplicaRepairRequested),
+				Status:    enums.PENDING,
+			}
+
+			if err := tx.Create(&event).Error; err != nil {
 				return err
 			}
 		}

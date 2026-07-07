@@ -1,6 +1,8 @@
 package model
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+)
 
 type ReplicaData struct {
 	JobId      uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey;column:job_id" json:"jobId"`
