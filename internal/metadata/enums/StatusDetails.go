@@ -11,4 +11,6 @@ const (
 	PROGRESS        StatusDetail = "Progress"
 	UNDERREPLICATED StatusDetail = "UnderReplicated"
 	PUBLISHED       StatusDetail = "Published"
+	COMPLETED       StatusDetail = "Completed"
+	FAILED          StatusDetail = "Failed"
 )

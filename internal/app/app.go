@@ -55,6 +55,10 @@ func Run() error {
 	mux.HandleFunc("POST /files/allocate", controller.AllocateNodes)
 	mux.HandleFunc("POST /files/commit", controller.CommitResponse)
 
+	// Recovery
+	// Recovery
+	mux.HandleFunc("POST /recover/{jobId}/mark", controller.MarkRecoveryController)
+	mux.HandleFunc("POST /recover/{jobId}/complete", controller.CompleteRecoveryController)
 	fmt.Println("Server is listening at port 8080")
 	return http.ListenAndServe(":8080", mux)
 }

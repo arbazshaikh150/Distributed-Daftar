@@ -54,6 +54,7 @@ import (
 
 // Using docker for rabbitmq
 type RepairMessage struct {
+	EventId    uuid.UUID `json:"eventId"`
 	JobId      uuid.UUID `json:"jobId"`
 	FileId     uuid.UUID `json:"fileId"`
 	CopyNode   uuid.UUID `json:"copyNode"`
@@ -73,6 +74,10 @@ func StartRecoveryWorker(ctx context.Context) {
 		case <-ticker.C:
 			event, err := processPendingRequest()
 			if err != nil {
+				continue
+			}
+
+			if event == nil {
 				continue
 			}
 
@@ -116,7 +121,7 @@ func processPendingRequest() (*model.OutboxEvent, error) {
 
 	// Database transactions
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Clauses(clause.Locking{
+		result := tx.Clauses(clause.Locking{
 			Strength: "UPDATE",
 			Options:  "SKIP LOCKED",
 		}).Where(
@@ -125,10 +130,14 @@ func processPendingRequest() (*model.OutboxEvent, error) {
 			enums.PROGRESS,
 			expiredBefore,
 		).Order("created_at ASC").
-			Limit(1).First(&events).Error
+			Limit(1).Find(&events)
 
-		if err != nil {
-			return err
+		if result.Error != nil {
+			return result.Error
+		}
+
+		if result.RowsAffected == 0 {
+			return nil
 		}
 
 		// now updating
@@ -141,6 +150,11 @@ func processPendingRequest() (*model.OutboxEvent, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if events.EventId == uuid.Nil {
+		return nil, nil
+	}
+
 	return &events, nil
 }
 
@@ -176,6 +190,7 @@ func PublishRepairEvent(ctx context.Context, event model.OutboxEvent) error {
 
 	// step2 : Converting it into the desired shape for the queue
 	msg := RepairMessage{
+		EventId:    event.EventId,
 		JobId:      replica.JobId,
 		FileId:     replica.RunID,
 		CopyNode:   replica.CopyNode,
@@ -206,7 +221,7 @@ func PublishRepairEvent(ctx context.Context, event model.OutboxEvent) error {
 func MarkPublished(event model.OutboxEvent) error {
 	now := time.Now()
 
-	return database.DB.Model(&event).Updates(map[string]interface{}{
+	return database.DB.Model(&model.OutboxEvent{}).Where("event_id = ?", event.EventId).Updates(map[string]interface{}{
 		"status":       enums.PUBLISHED,
 		"processed_at": &now,
 		"locked_at":    nil,
@@ -215,7 +230,7 @@ func MarkPublished(event model.OutboxEvent) error {
 }
 
 func MarkFailed(event model.OutboxEvent, err error) error {
-	return database.DB.Model(&event).Updates(map[string]interface{}{
+	return database.DB.Model(&model.OutboxEvent{}).Where("event_id = ?", event.EventId).Updates(map[string]interface{}{
 		"status":      enums.PENDING,
 		"locked_at":   nil,
 		"retry_count": gorm.Expr("retry_count + 1"),

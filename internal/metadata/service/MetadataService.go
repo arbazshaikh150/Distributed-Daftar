@@ -161,13 +161,14 @@ func Commit(req dto.CommitRequest) (dto.CommitResponse, error) {
 
 	err = database.DB.Transaction(func(tx *gorm.DB) error {
 		metadata := model.Metadata{
-			FileId:       req.FileId,
-			Version:      req.Version,
-			SizeBytes:    req.Size,
-			PrimaryNode:  primaryNode,
-			ReplicaNodes: replicaNodes,
-			CreatedAt:    time.Now(),
-			Status:       status,
+			FileId:           req.FileId,
+			Version:          req.Version,
+			SizeBytes:        req.Size,
+			PrimaryNode:      primaryNode,
+			ReplicaNodes:     replicaNodes,
+			CreatedAt:        time.Now(),
+			Status:           status,
+			ReplicationCount: req.ReplicationFactor,
 		}
 
 		if err := tx.Create(&metadata).Error; err != nil {

@@ -8,14 +8,15 @@ import (
 )
 
 type Metadata struct {
-	FileId       uuid.UUID          `gorm:"primaryKey;column:file_id" json:"fileId"`
-	FileName     string             `gorm:"column:file_name" json:"fileName"`
-	Version      int                `gorm:"column:version;not null" json:"version"`
-	SizeBytes    int64              `gorm:"column:size_bytes;not null" json:"sizeBytes"`
-	PrimaryNode  uuid.UUID          `gorm:"column:primary_node;not null" json:"primaryNode"`
-	ReplicaNodes []uuid.UUID        `gorm:"type:jsonb;serializer:json;column:replica_nodes" json:"replicaNodes"`
-	CreatedAt    time.Time          `gorm:"column:created_at;not null" json:"createdAt"`
-	Status       enums.StatusDetail `gorm:"column:status;not null" json:"status"`
+	FileId           uuid.UUID          `gorm:"primaryKey;column:file_id" json:"fileId"`
+	FileName         string             `gorm:"column:file_name" json:"fileName"`
+	Version          int                `gorm:"column:version;not null" json:"version"`
+	SizeBytes        int64              `gorm:"column:size_bytes;not null" json:"sizeBytes"`
+	PrimaryNode      uuid.UUID          `gorm:"column:primary_node;not null" json:"primaryNode"`
+	ReplicaNodes     []uuid.UUID        `gorm:"type:jsonb;serializer:json;column:replica_nodes" json:"replicaNodes"`
+	CreatedAt        time.Time          `gorm:"column:created_at;not null" json:"createdAt"`
+	Status           enums.StatusDetail `gorm:"column:status;not null" json:"status"`
+	ReplicationCount int                `gorm:"column:replication_count;not null" json:"replication_count"`
 }
 
 func (Metadata) TableName() string {
