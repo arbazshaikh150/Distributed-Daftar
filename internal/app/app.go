@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/cache"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/controller"
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/queue"
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/service"
 )
 
 // Run starts the application.
@@ -30,6 +32,11 @@ func Run() error {
 		log.Fatal(err)
 	}
 	log.Println("Connected To RabbitMQ")
+
+	// Starting the go routine here for recovery
+	ctx := context.Background()
+	go service.StartRecoveryWorker(ctx)
+	log.Println("GoRoutine is being start")
 
 	// Nodes
 	mux := http.NewServeMux()
