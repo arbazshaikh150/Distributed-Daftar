@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -35,12 +36,23 @@ type CreateNodeRequest struct {
 	AvailableCapacity int64  `json:"availableCapacity"`
 }
 
+type FileSubmitRequest struct {
+	FileSpace         int64 `json:"fileSpace"`
+	MinimumReplica    int   `json:"minimumReplica"`
+	ReplicationFactor int   `json:"replicationFactor"`
+}
+
 type RepairMessage struct {
 	EventID    uuid.UUID `json:"eventId"`
 	JobID      uuid.UUID `json:"jobId"`
 	FileID     uuid.UUID `json:"fileId"`
 	CopyNode   uuid.UUID `json:"copyNode"`
 	TargetNode uuid.UUID `json:"targetNode"`
+}
+
+type AllocationResponse struct {
+	FileID uuid.UUID   `json:"fileId"`
+	Nodes  []uuid.UUID `json:"nodes"`
 }
 
 type Server struct {
@@ -114,6 +126,23 @@ func (s *Server) ListNodeController(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, nodes)
 }
 
+func (s *Server) FileSubmitController(w http.ResponseWriter, r *http.Request) {
+	var req FileSubmitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.HandleFileSubmit(req.FileSpace, req.MinimumReplica, req.ReplicationFactor); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"message": "file submitted successfully",
+	})
+}
+
 func (s *Server) registerToMetadata(node *DummyNode) (uuid.UUID, error) {
 	payload := dto.RegisterNodeRequest{
 		Host:          node.Host,
@@ -162,15 +191,9 @@ func (s *Server) startHeartbeat(ctx context.Context, nodeID uuid.UUID) {
 }
 
 func (s *Server) StartRepairConsumer(ctx context.Context) error {
-	rabbitURL := os.Getenv("RABBITMQ_URL")
-	if rabbitURL == "" {
-		return errors.New("RABBITMQ_URL is not present")
-	}
+	rabbitURL := "amqp://guest:guest@localhost:5672/"
 
-	queueName := os.Getenv("REPLICA_REPAIR_QUEUE")
-	if queueName == "" {
-		return errors.New("REPLICA_REPAIR_QUEUE is not present")
-	}
+	queueName := "replica-repair"
 
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
@@ -319,6 +342,102 @@ func (s *Server) postJSON(path string, payload any, response any) error {
 	return json.NewDecoder(httpResponse.Body).Decode(response)
 }
 
+func (s *Server) HandleFileSubmit(fileSpace int64, minimumReplica int, replicationFactor int) error {
+	if fileSpace <= 0 {
+		return errors.New("fileSpace must be greater than zero")
+	}
+	if minimumReplica <= 0 {
+		return errors.New("minimumReplica must be greater than zero")
+	}
+	if replicationFactor < minimumReplica {
+		return errors.New("replicationFactor must be greater than or equal to minimumReplica")
+	}
+
+	var allocation AllocationResponse
+	allocateRequest := dto.DataAllocationRequest{
+		RequiredSpace:       fileSpace,
+		ReplicationFactor:   replicationFactor,
+		MinimumRequiredCopy: minimumReplica,
+	}
+
+	if err := s.postJSON("/files/allocate", allocateRequest, &allocation); err != nil {
+		return fmt.Errorf("file allocation failed: %w", err)
+	}
+	if allocation.FileID == uuid.Nil {
+		return errors.New("file allocation did not return fileId")
+	}
+	if len(allocation.Nodes) < minimumReplica {
+		return fmt.Errorf("metadata returned %d nodes, minimum required is %d", len(allocation.Nodes), minimumReplica)
+	}
+
+	nodes := append([]uuid.UUID(nil), allocation.Nodes...)
+	rand.Shuffle(len(nodes), func(i, j int) {
+		nodes[i], nodes[j] = nodes[j], nodes[i]
+	})
+
+	successCount := minimumReplica
+	if len(nodes) > minimumReplica {
+		successCount += rand.Intn(len(nodes) - minimumReplica + 1)
+	}
+
+	successfulNodes := nodes[:successCount]
+	failedNodes := nodes[successCount:]
+
+	s.storeFileOnSuccessfulNodes(allocation.FileID, fileSpace, successfulNodes)
+
+	commitRequest := dto.CommitRequest{
+		FileId:             allocation.FileID,
+		Version:            1,
+		ReplicationFactor:  replicationFactor,
+		MinimumReplication: minimumReplica,
+		SuccessfulNodes:    successfulNodes,
+		FailedNodes:        failedNodes,
+		TotalSuccessCount:  len(successfulNodes),
+		Size:               fileSpace,
+	}
+
+	if err := s.postJSON("/files/commit", commitRequest, nil); err != nil {
+		return fmt.Errorf("file commit failed: %w", err)
+	}
+
+	log.Printf(
+		"file submit completed file=%s success=%d failed=%d",
+		allocation.FileID,
+		len(successfulNodes),
+		len(failedNodes),
+	)
+	return nil
+}
+
+func (s *Server) storeFileOnSuccessfulNodes(fileID uuid.UUID, fileSpace int64, successfulNodes []uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, nodeID := range successfulNodes {
+		node := s.nodes[nodeID]
+		if node == nil {
+			continue
+		}
+
+		exists := false
+		for _, existingFile := range node.Files {
+			if existingFile == fileID {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			node.Files = append(node.Files, fileID)
+		}
+
+		if node.AvailableCapacity >= fileSpace {
+			node.AvailableCapacity -= fileSpace
+		} else {
+			node.AvailableCapacity = 0
+		}
+	}
+}
+
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -326,10 +445,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 }
 
 func main() {
-	metadataURL := os.Getenv("METADATA_URL")
-	if metadataURL == "" {
-		metadataURL = "http://localhost:8080"
-	}
+	metadataURL := "http://localhost:8080" // localhost only
 
 	listenAddr := os.Getenv("DUMMY_SERVER_ADDR")
 	if listenAddr == "" {
@@ -349,6 +465,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /dummy/nodes", server.CreateNodeController)
 	mux.HandleFunc("GET /dummy/nodes", server.ListNodeController)
+	mux.HandleFunc("POST /dummy/files/upload", server.FileSubmitController)
 
 	log.Printf("dummy server listening on %s", listenAddr)
 	log.Fatal(http.ListenAndServe(listenAddr, mux))
