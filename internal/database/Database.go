@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ func ConnectToDb() error {
 		os.Getenv("DB_PORT"),
 	)
 
-	db , err := gorm.Open(postgres.Open(dsn) , &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 
 	if err != nil {
 		return err
@@ -29,4 +30,17 @@ func ConnectToDb() error {
 
 	DB = db
 	return nil
+}
+
+func AutoMigrate() error {
+	if err := DB.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto").Error; err != nil {
+		return err
+	}
+
+	return DB.AutoMigrate(
+		&model.NodesData{},
+		&model.Metadata{},
+		&model.ReplicaData{},
+		&model.OutboxEvent{},
+	)
 }

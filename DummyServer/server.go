@@ -191,56 +191,105 @@ func (s *Server) startHeartbeat(ctx context.Context, nodeID uuid.UUID) {
 }
 
 func (s *Server) StartRepairConsumer(ctx context.Context) error {
-	rabbitURL := "amqp://guest:guest@localhost:5672/"
+	const consumerWorkerCount = 5
 
-	queueName := "replica-repair"
+	rabbitURL := os.Getenv("RABBITMQ_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://guest:guest@localhost:5672/"
+	}
+
+	queueName := os.Getenv("REPLICA_REPAIR_QUEUE")
+	if queueName == "" {
+		queueName = "replica-repair"
+	}
 
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
 		return err
 	}
 
-	channel, err := conn.Channel()
+	setupChannel, err := conn.Channel()
 	if err != nil {
 		conn.Close()
 		return err
 	}
 
-	_, err = channel.QueueDeclare(queueName, true, false, false, false, nil)
+	_, err = setupChannel.QueueDeclare(queueName, true, false, false, false, nil)
+	_ = setupChannel.Close()
 	if err != nil {
-		channel.Close()
 		conn.Close()
 		return err
 	}
 
-	if err := channel.Qos(1, 0, false); err != nil {
-		channel.Close()
-		conn.Close()
-		return err
-	}
-
-	messages, err := channel.Consume(queueName, "dummy-server", false, false, false, false, nil)
-	if err != nil {
-		channel.Close()
-		conn.Close()
-		return err
+	for workerID := 0; workerID < consumerWorkerCount; workerID++ {
+		if err := s.StartRepairConsumerWorker(ctx, conn, queueName, workerID); err != nil {
+			conn.Close()
+			return err
+		}
 	}
 
 	go func() {
 		<-ctx.Done()
-		channel.Close()
-		conn.Close()
+		_ = conn.Close()
 	}()
 
-	go func() {
-		for message := range messages {
-			if err := s.handleRepairMessage(message.Body); err != nil {
-				log.Printf("repair event failed: %v", err)
-				_ = message.Nack(false, true)
-				continue
-			}
+	return nil
+}
 
-			_ = message.Ack(false)
+func (s *Server) StartRepairConsumerWorker(ctx context.Context, conn *amqp.Connection, queueName string, workerID int) error {
+	channel, err := conn.Channel()
+	if err != nil {
+		return err
+	}
+	if err := channel.Qos(1, 0, false); err != nil {
+		channel.Close()
+		return err
+	}
+	consumerName := fmt.Sprintf(
+		"dummy-server-worker-%d",
+		workerID,
+	)
+
+	messages, err := channel.Consume(
+		queueName,
+		consumerName,
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		channel.Close()
+		return err
+	}
+
+	go func() {
+		defer channel.Close()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case message, ok := <-messages:
+				if !ok {
+					return
+				}
+
+				// Process, then Ack/Nack.
+				if err := s.handleRepairMessage(message.Body); err != nil {
+					log.Printf("repair event failed in worker %d: %v", workerID, err)
+					if nackErr := message.Nack(false, false); nackErr != nil {
+						log.Printf("failed to nack message in worker %d: %v", workerID, nackErr)
+					}
+					continue
+				}
+
+				if err := message.Ack(false); err != nil {
+					log.Printf("failed to ack message in worker %d: %v", workerID, err)
+				}
+			}
 		}
 	}()
 
@@ -259,8 +308,15 @@ func (s *Server) handleRepairMessage(body []byte) error {
 	}
 
 	status := strings.ToLower(markResponse.Status)
-	if status == "already_completed" {
+	switch status {
+	case "already_completed":
 		return nil
+	case "busy":
+		log.Printf("recovery job %s is already being processed; acknowledging duplicate message", event.JobID)
+		return nil
+	case "claimed":
+	default:
+		return fmt.Errorf("unexpected recovery mark status %q for job %s", markResponse.Status, event.JobID)
 	}
 
 	if err := s.copyFile(event.CopyNode, event.TargetNode, event.FileID); err != nil {
@@ -445,7 +501,10 @@ func writeJSON(w http.ResponseWriter, statusCode int, value any) {
 }
 
 func main() {
-	metadataURL := "http://localhost:8080" // localhost only
+	metadataURL := os.Getenv("METADATA_URL")
+	if metadataURL == "" {
+		metadataURL = "http://localhost:8080"
+	}
 
 	listenAddr := os.Getenv("DUMMY_SERVER_ADDR")
 	if listenAddr == "" {

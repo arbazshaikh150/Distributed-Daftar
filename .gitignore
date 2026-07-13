@@ -19,6 +19,8 @@ coverage.out
 .env.*
 !.env.example
 
+k8s/secrets.yml
+
 # Editor and OS files
 .idea/
 .vscode/

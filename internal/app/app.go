@@ -21,6 +21,11 @@ func Run() error {
 	}
 	log.Println("Connected to the PostGresSQL")
 
+	// Automigrating the tables
+	if err := database.AutoMigrate(); err != nil {
+		log.Println(err)
+	}
+
 	// Connecting to Redis
 	if err := cache.ConnectToRedis(); err != nil {
 		log.Fatal(err)

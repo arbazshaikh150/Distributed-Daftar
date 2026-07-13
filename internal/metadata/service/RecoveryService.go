@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/database"
@@ -13,7 +15,6 @@ import (
 	"github.com/arbazshaikh150/Distributed-Daftar/internal/metadata/queue"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -72,21 +73,67 @@ func StartRecoveryWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			event, err := processPendingRequest()
+			events, err := processPendingRequests(100)
 			if err != nil {
 				continue
 			}
 
-			if event == nil {
+			if len(events) == 0 {
+				continue
+			}
+			// Sequentially adding into the queue
+			// for _, event := range events {
+			// 	if err := PublishRepairEvent(ctx, event); err != nil {
+			// 		MarkFailed(event, err)
+			// 		continue
+			// 	}
+
+			// 	MarkPublished(event)
+			// }
+
+			// Parallel call
+			if queue.RabbitConn == nil || queue.RabbitConn.IsClosed() {
+				log.Println("RabbitMQ connection is not open")
 				continue
 			}
 
-			err = PublishRepairEvent(ctx, *event)
-			if err != nil {
-				MarkFailed(*event, err)
-				continue
+			jobs := make(chan model.OutboxEvent, len(events))
+			var wg sync.WaitGroup
+
+			for _, event := range events {
+				jobs <- event
 			}
-			MarkPublished(*event)
+			close(jobs)
+
+			for worker := 0; worker <= 5; worker++ {
+				wg.Add(1)
+
+				go func(workerID int) {
+					defer wg.Done()
+
+					channel, err := queue.RabbitConn.Channel()
+					if err != nil {
+						log.Printf("publisher worker %d failed to open RabbitMQ channel: %v", workerID, err)
+						return
+					}
+					defer channel.Close()
+
+					for event := range jobs {
+						if err := PublishRepairEvent(ctx, channel, event); err != nil {
+							if markErr := MarkFailed(event, err); markErr != nil {
+								log.Printf("failed to mark event %s as failed: %v", event.EventId, markErr)
+							}
+							continue
+						}
+						if err := MarkPublished(event); err != nil {
+							log.Printf("failed to mark event %s as published: %v", event.EventId, err)
+						}
+					}
+
+				}(worker)
+			}
+
+			wg.Wait()
 		}
 	}
 }
@@ -114,48 +161,22 @@ TODO : ( since i am picking the 10 events )
 	then for 20 event --> (5 events are parallel)
 	(20 / 5) * 12ms = 48ms
 */
-func processPendingRequest() (*model.OutboxEvent, error) {
-	var events model.OutboxEvent
-	now := time.Now()
-	expiredBefore := now.Add(-1 * time.Minute)
 
-	// Database transactions
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Clauses(clause.Locking{
-			Strength: "UPDATE",
-			Options:  "SKIP LOCKED",
-		}).Where(
-			"status = ? OR (status = ? AND locked_at < ?)",
-			enums.PENDING,
-			enums.PROGRESS,
-			expiredBefore,
-		).Order("created_at ASC").
-			Limit(1).Find(&events)
+// Removing the lock from the outbox table
+func processPendingRequests(limit int) ([]model.OutboxEvent, error) {
+	events := make([]model.OutboxEvent, 0)
 
-		if result.Error != nil {
-			return result.Error
-		}
+	result := database.DB.
+		Where("status = ?", enums.PENDING).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&events)
 
-		if result.RowsAffected == 0 {
-			return nil
-		}
-
-		// now updating
-		return tx.Model(&events).Updates(map[string]interface{}{
-			"status":    enums.PROGRESS,
-			"locked_at": now,
-		}).Error
-	})
-
-	if err != nil {
-		return nil, err
+	if result.Error != nil {
+		return nil, result.Error
 	}
 
-	if events.EventId == uuid.Nil {
-		return nil, nil
-	}
-
-	return &events, nil
+	return events, nil
 }
 
 // Publishing repair event
@@ -169,8 +190,8 @@ func processPendingRequest() (*model.OutboxEvent, error) {
 	and use it for the event published info
 */
 
-func PublishRepairEvent(ctx context.Context, event model.OutboxEvent) error {
-	if queue.RabbitChannel == nil {
+func PublishRepairEvent(ctx context.Context, channel *amqp.Channel, event model.OutboxEvent) error {
+	if channel == nil || channel.IsClosed() {
 		return errors.New("RabbitMQ Channel is not open")
 	}
 
@@ -203,7 +224,7 @@ func PublishRepairEvent(ctx context.Context, event model.OutboxEvent) error {
 	}
 
 	// step3: publishing it into the rabbitMQ
-	return queue.RabbitChannel.PublishWithContext(
+	return channel.PublishWithContext(
 		ctx,
 		"",
 		queueName,
